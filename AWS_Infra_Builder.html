@@ -1,0 +1,1685 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AWS Infrastructure Builder v2 — Athos de Araujo Gomes de França</title>
+<style>
+/* ═══════════════════════════════════════════════════
+   BASE & TOKENS
+═══════════════════════════════════════════════════ */
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --aws-orange:#FF9900; --aws-blue:#232F3E; --aws-teal:#007BA7;
+  --ok:#22c55e; --warn:#f59e0b; --err:#ef4444; --info:#3b82f6;
+  --bg:#ffffff; --bg2:#f5f5f3; --bg3:#efefed;
+  --txt:#18181b; --txt2:#71717a; --bdr:rgba(0,0,0,0.10);
+  --rad:8px; --shadow:0 2px 12px rgba(0,0,0,0.10);
+}
+@media(prefers-color-scheme:dark){
+  :root{
+    --bg:#18181b; --bg2:#1f1f22; --bg3:#27272a;
+    --txt:#f4f4f5; --txt2:#a1a1aa; --bdr:rgba(255,255,255,0.09);
+  }
+}
+body{font-family:system-ui,-apple-system,'Segoe UI',sans-serif;background:var(--bg2);
+  color:var(--txt);font-size:13px;height:100vh;display:flex;flex-direction:column;overflow:hidden}
+
+/* ═══════════════════════════════════════════════════
+   TOPBAR
+═══════════════════════════════════════════════════ */
+#topbar{display:flex;align-items:center;gap:10px;padding:8px 14px;
+  background:var(--aws-blue);color:#fff;flex-shrink:0;z-index:100}
+.logo{font-size:14px;font-weight:700;display:flex;align-items:center;gap:5px}
+.logo em{color:var(--aws-orange);font-style:normal}
+.logo-sub{font-size:10px;opacity:.45;margin-left:3px;font-weight:400}
+#topbar-actions{margin-left:auto;display:flex;gap:5px}
+#topbar-actions button{
+  background:rgba(255,255,255,.10);border:.5px solid rgba(255,255,255,.20);
+  color:#fff;padding:5px 10px;border-radius:6px;cursor:pointer;font-size:11px;
+  transition:background .15s;display:flex;align-items:center;gap:4px;white-space:nowrap}
+#topbar-actions button:hover{background:rgba(255,255,255,.22)}
+#topbar-actions button.btn-danger{background:rgba(239,68,68,.25);border-color:rgba(239,68,68,.4)}
+#topbar-actions button.btn-primary{background:rgba(255,153,0,.30);border-color:rgba(255,153,0,.6)}
+
+/* ═══════════════════════════════════════════════════
+   MAIN LAYOUT
+═══════════════════════════════════════════════════ */
+#main{display:flex;flex:1;overflow:hidden}
+
+/* ── SIDEBAR ── */
+#sidebar{width:190px;flex-shrink:0;border-right:.5px solid var(--bdr);
+  display:flex;flex-direction:column;overflow:hidden;background:var(--bg3)}
+#sidebar-header{padding:8px 10px 4px;display:flex;flex-direction:column;gap:4px}
+#sidebar-header h3{font-size:10px;font-weight:700;text-transform:uppercase;
+  letter-spacing:.07em;color:var(--txt2)}
+#service-search{padding:5px 8px;border:.5px solid var(--bdr);border-radius:var(--rad);
+  background:var(--bg);color:var(--txt);font-size:12px;outline:none;width:100%}
+#service-search:focus{border-color:var(--aws-orange)}
+#service-list{overflow-y:auto;flex:1;padding:2px 0 8px}
+.svc-cat{padding:7px 10px 2px;font-size:9px;font-weight:700;color:var(--txt2);
+  text-transform:uppercase;letter-spacing:.08em}
+.svc-item{display:flex;align-items:center;gap:7px;padding:5px 9px;cursor:grab;
+  border-radius:5px;margin:1px 4px;transition:background .1s;position:relative}
+.svc-item:hover{background:var(--bg2)}
+.svc-item.has-warning::after{content:'⚠';position:absolute;right:8px;top:50%;
+  transform:translateY(-50%);font-size:10px;opacity:.6}
+.svc-item.has-error::after{content:'🔴';position:absolute;right:8px;top:50%;
+  transform:translateY(-50%);font-size:9px}
+.svc-icon{width:26px;height:26px;border-radius:6px;display:flex;align-items:center;
+  justify-content:center;font-size:13px;flex-shrink:0}
+.svc-name{font-size:11px;font-weight:600;color:var(--txt);line-height:1.2}
+.svc-short{font-size:10px;color:var(--txt2)}
+
+/* ── CANVAS ── */
+#canvas-wrap{flex:1;overflow:hidden;position:relative;background:var(--bg)}
+#canvas{width:100%;height:100%;position:relative;overflow:hidden;
+  background-image:radial-gradient(circle,var(--bdr) 1px,transparent 1px);
+  background-size:22px 22px}
+#canvas-svg{position:absolute;top:0;left:0;width:100%;height:100%;
+  pointer-events:none;z-index:1}
+#canvas.connecting{cursor:crosshair}
+#canvas.connecting .canvas-node{cursor:crosshair}
+
+/* ── NODES ── */
+.canvas-node{position:absolute;border-radius:10px;cursor:move;z-index:10;
+  border:1.5px solid transparent;user-select:none;min-width:128px;max-width:158px;
+  transition:box-shadow .15s,border-color .2s}
+.canvas-node:hover{z-index:20;box-shadow:0 3px 16px rgba(0,0,0,.13)}
+.canvas-node.selected{z-index:30;box-shadow:0 0 0 3px rgba(255,153,0,.22)!important}
+.canvas-node.node-ok{border-color:var(--ok)!important}
+.canvas-node.node-warn{border-color:var(--warn)!important;animation:pulse-warn 2s infinite}
+.canvas-node.node-err{border-color:var(--err)!important;animation:pulse-err 2s infinite}
+@keyframes pulse-warn{0%,100%{box-shadow:0 0 0 0 rgba(245,158,11,.3)}50%{box-shadow:0 0 0 5px rgba(245,158,11,0)}}
+@keyframes pulse-err{0%,100%{box-shadow:0 0 0 0 rgba(239,68,68,.3)}50%{box-shadow:0 0 0 5px rgba(239,68,68,0)}}
+.node-header{display:flex;align-items:center;gap:6px;padding:7px 8px;border-radius:8px 8px 0 0}
+.node-icon{width:22px;height:22px;border-radius:5px;display:flex;align-items:center;
+  justify-content:center;font-size:13px;flex-shrink:0}
+.node-title{font-size:12px;font-weight:700;flex:1;min-width:0}
+.node-body{padding:4px 8px 6px;font-size:10px;color:var(--txt2);border-radius:0 0 8px 8px}
+.node-badge{position:absolute;top:-7px;left:-7px;width:16px;height:16px;border-radius:50%;
+  font-size:10px;display:flex;align-items:center;justify-content:center;
+  border:1.5px solid var(--bg);z-index:60;cursor:help;line-height:1}
+.node-badge.ok{background:var(--ok)}
+.node-badge.warn{background:var(--warn)}
+.node-badge.err{background:var(--err)}
+.node-delete{position:absolute;top:-7px;right:-7px;width:17px;height:17px;
+  background:#fee2e2;border:.5px solid #fca5a5;border-radius:50%;font-size:10px;
+  cursor:pointer;display:none;align-items:center;justify-content:center;
+  color:#dc2626;z-index:60;line-height:1;font-weight:700}
+.canvas-node.selected .node-delete{display:flex}
+.connect-port{width:11px;height:11px;border-radius:50%;background:var(--aws-orange);
+  border:2px solid var(--bg);position:absolute;cursor:crosshair;z-index:50;
+  transition:transform .1s;display:none}
+.connect-port:hover{transform:scale(1.5)!important}
+.port-r{right:-5px;top:50%;transform:translateY(-50%)}
+.port-b{bottom:-5px;left:50%;transform:translateX(-50%)}
+.canvas-node.selected .connect-port{display:block}
+.canvas-node.selected .port-r:hover{transform:translateY(-50%) scale(1.5)}
+.canvas-node.selected .port-b:hover{transform:translateX(-50%) scale(1.5)}
+
+/* ── REGION BOXES ── */
+.region-box{position:absolute;border-radius:12px;border:1.5px dashed;z-index:2;
+  cursor:move;min-width:160px;min-height:100px}
+.region-label{font-size:10px;font-weight:700;position:absolute;top:7px;left:11px;
+  text-transform:uppercase;letter-spacing:.06em;pointer-events:none}
+.region-resize{position:absolute;bottom:4px;right:6px;font-size:12px;cursor:se-resize;
+  opacity:.4;line-height:1;pointer-events:all}
+
+/* ── INFO PANEL ── */
+#info-panel{width:218px;flex-shrink:0;border-left:.5px solid var(--bdr);
+  overflow-y:auto;background:var(--bg3);display:flex;flex-direction:column}
+#info-panel-header{padding:8px 11px 6px;border-bottom:.5px solid var(--bdr);flex-shrink:0}
+#info-panel-header h3{font-size:10px;font-weight:700;text-transform:uppercase;
+  letter-spacing:.07em;color:var(--txt2)}
+#info-content{flex:1;overflow-y:auto;padding-bottom:12px}
+.info-sec{padding:9px 11px 0}
+.info-sec+.info-sec{border-top:.5px solid var(--bdr);padding-top:9px;margin-top:2px}
+.info-lbl{font-size:10px;color:var(--txt2);margin-bottom:3px;font-weight:600;
+  text-transform:uppercase;letter-spacing:.04em}
+.info-val{font-size:11px;color:var(--txt);line-height:1.55;margin-bottom:6px}
+.info-tip{font-size:11px;color:var(--txt);margin-bottom:5px;padding:4px 6px 4px 9px;
+  border-left:2px solid;border-radius:0 4px 4px 0;line-height:1.4;
+  background:rgba(0,0,0,.03)}
+.info-tag{display:inline-block;padding:2px 7px;border-radius:10px;font-size:10px;
+  margin:2px 2px 2px 0;font-weight:600;cursor:pointer;transition:opacity .15s}
+.info-tag:hover{opacity:.75}
+.info-link{font-size:11px;color:var(--aws-teal);display:block;margin-bottom:3px;
+  text-decoration:underline;cursor:pointer}
+.empty-state{padding:20px 12px;text-align:center;color:var(--txt2);
+  font-size:11px;line-height:1.7}
+
+/* ── VALIDATION PANEL (inside info) ── */
+.val-item{display:flex;align-items:flex-start;gap:6px;padding:5px 11px;
+  border-bottom:.5px solid var(--bdr)}
+.val-icon{font-size:13px;flex-shrink:0;margin-top:1px}
+.val-text{font-size:11px;line-height:1.45;color:var(--txt)}
+.val-text strong{display:block;font-size:10px;text-transform:uppercase;
+  letter-spacing:.04em;margin-bottom:1px}
+.val-badge-ok{color:var(--ok)} .val-badge-warn{color:var(--warn)} .val-badge-err{color:var(--err)}
+
+/* ── TOAST ── */
+#toast-wrap{position:absolute;bottom:42px;left:50%;transform:translateX(-50%);
+  display:flex;flex-direction:column;align-items:center;gap:6px;z-index:300;
+  pointer-events:none;width:max-content;max-width:520px}
+.toast{padding:8px 16px;border-radius:9px;font-size:12px;font-weight:500;
+  opacity:1;transition:opacity .4s,transform .4s;box-shadow:0 4px 18px rgba(0,0,0,.18);
+  display:flex;align-items:center;gap:8px;pointer-events:all;color:#fff}
+.toast.ok{background:#16a34a}
+.toast.warn{background:#d97706}
+.toast.err{background:#dc2626}
+.toast.info{background:var(--aws-blue)}
+.toast.fade{opacity:0;transform:translateY(8px)}
+.toast-close{cursor:pointer;opacity:.7;font-size:14px;margin-left:4px}
+
+/* ── STATUSBAR ── */
+#statusbar{display:flex;align-items:center;gap:8px;padding:5px 14px;
+  border-top:.5px solid var(--bdr);font-size:11px;color:var(--txt2);
+  flex-shrink:0;background:var(--bg3)}
+.dot{width:6px;height:6px;border-radius:50%;flex-shrink:0}
+#status-counters{margin-left:auto;display:flex;gap:12px;opacity:.7}
+
+/* ── VALIDATION LEGEND BAR ── */
+#val-bar{display:flex;align-items:center;gap:12px;padding:4px 14px;
+  background:var(--bg3);border-bottom:.5px solid var(--bdr);
+  font-size:10px;color:var(--txt2);flex-shrink:0;flex-wrap:wrap}
+.vleg{display:flex;align-items:center;gap:4px}
+.vleg-dot{width:8px;height:8px;border-radius:50%}
+
+/* ── PREREQ MODAL ── */
+#modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:500;
+  display:none;align-items:center;justify-content:center}
+#modal-overlay.open{display:flex}
+#modal{background:var(--bg);border-radius:12px;padding:24px;max-width:420px;width:90%;
+  box-shadow:0 8px 40px rgba(0,0,0,.25)}
+#modal h2{font-size:15px;margin-bottom:8px;color:var(--txt)}
+#modal p{font-size:12px;color:var(--txt2);line-height:1.6;margin-bottom:16px}
+#modal-actions{display:flex;gap:8px;justify-content:flex-end}
+#modal-actions button{padding:6px 16px;border-radius:6px;border:none;
+  cursor:pointer;font-size:12px;font-weight:600}
+.btn-cancel{background:var(--bg3);color:var(--txt)}
+.btn-confirm{background:var(--aws-orange);color:#fff}
+</style>
+</head>
+<body>
+
+<!-- TOP BAR -->
+<div id="topbar">
+  <div class="logo"><em>AWS</em> Infrastructure Builder
+    <span class="logo-sub">v2 · Athos de Araujo Gomes de França</span>
+  </div>
+  <div id="topbar-actions">
+    <button onclick="addRegion()">＋ Região/AZ</button>
+    <button onclick="validateAll()" class="btn-primary">🔍 Validar Tudo</button>
+    <button onclick="exportSVG()">⬇ Exportar SVG</button>
+    <button onclick="clearAll()" class="btn-danger">🗑 Limpar</button>
+    <button onclick="explainDiagram()" class="btn-primary">💡 Analisar</button>
+<button onclick="generateLab()">🎓 Gerar Lab</button>
+<button onclick="generateTerraform()">🏗 Terraform</button>
+<button onclick="generateCLI()">☁ AWS CLI</button>
+  </div>
+</div>
+
+<!-- VALIDATION LEGEND BAR -->
+<div id="val-bar">
+  <span style="font-weight:700;color:var(--txt)">Motor de Validação:</span>
+  <span class="vleg"><span class="vleg-dot" style="background:var(--ok)"></span>Válido</span>
+  <span class="vleg"><span class="vleg-dot" style="background:var(--warn)"></span>Atenção — pré-requisito faltando</span>
+  <span class="vleg"><span class="vleg-dot" style="background:var(--err)"></span>Erro — conexão inválida ou bloqueada</span>
+  <span style="margin-left:auto;opacity:.6">Clique em um serviço para ver diagnóstico detalhado</span>
+</div>
+
+<div id="main">
+  <!-- SIDEBAR -->
+  <div id="sidebar">
+    <div id="sidebar-header">
+      <h3>Serviços AWS</h3>
+      <input id="service-search" placeholder="🔍 Buscar…" oninput="filterServices(this.value)">
+    </div>
+    <div id="service-list"></div>
+  </div>
+
+  <!-- CANVAS -->
+  <div id="canvas-wrap">
+    <div id="canvas" ondragover="event.preventDefault()" ondrop="onDrop(event)">
+      <svg id="canvas-svg" xmlns="http://www.w3.org/2000/svg"></svg>
+    </div>
+    <div id="toast-wrap"></div>
+  </div>
+
+  <!-- INFO PANEL -->
+  <div id="info-panel">
+    <div id="info-panel-header"><h3>Detalhes & Diagnóstico</h3></div>
+    <div id="info-content">
+      <div class="empty-state">
+        🖱️ Arraste um serviço para o canvas ou dê duplo clique nele para começar.<br><br>
+        O motor de validação analisa pré-requisitos, incompatibilidades e boas práticas automaticamente.
+      </div>
+    </div>
+  </div>
+</div>
+
+<div id="statusbar">
+  <div class="dot" id="status-dot" style="background:var(--ok)"></div>
+  <span id="status-text">Pronto — canvas vazio</span>
+  <div id="status-counters">
+    <span>Nós: <strong id="nc">0</strong></span>
+    <span>Conexões: <strong id="cc">0</strong></span>
+    <span>Erros: <strong id="ec" style="color:var(--err)">0</strong></span>
+    <span>Avisos: <strong id="wc" style="color:var(--warn)">0</strong></span>
+  </div>
+</div>
+
+<!-- PREREQ CONFIRMATION MODAL -->
+<div id="modal-overlay">
+  <div id="modal">
+    <h2 id="modal-title">Pré-requisito necessário</h2>
+    <p id="modal-body"></p>
+    <div id="modal-actions">
+      <button class="btn-cancel" onclick="closeModal()">Cancelar</button>
+      <button class="btn-confirm" id="modal-confirm">Adicionar mesmo assim</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ═══════════════════════════════════════════════════════════════════════════════
+//  AWS INFRASTRUCTURE BUILDER v2
+//  Autor: Athos de Araujo Gomes de França
+//
+//  Motor de Validação Arquitetural:
+//  ─ Pré-requisitos: serviços que DEVEM existir antes de adicionar outro
+//  ─ Incompatibilidades: pares de serviços que não podem coexistir sem mediador
+//  ─ Dependências de conexão: A→B só pode se C já estiver presente no diagrama
+//  ─ Conexões bloqueadas: pares que nunca devem ser conectados diretamente
+//  ─ Alertas contextuais: dicas de segurança e Well-Architected Framework
+// ═══════════════════════════════════════════════════════════════════════════════
+
+// ──────────────────────────────────────────────────────────────────────────────
+//  CATÁLOGO DE SERVIÇOS
+// ──────────────────────────────────────────────────────────────────────────────
+const SERVICES = [
+  // ── COMPUTE ──
+  { cat:'Compute', id:'ec2', name:'EC2', short:'Máquinas virtuais', icon:'🖥️', color:'#E8663D', bg:'#FFF0EB',
+    desc:'Amazon EC2 oferece VMs redimensionáveis. Você controla SO, CPU, memória, rede e storage.',
+    tips:['Use Auto Scaling Groups para escala horizontal automática','Prefira instâncias reservadas/Savings Plans para workloads estáveis (até 72% de desconto)','Associe sempre um Security Group restritivo — princípio do menor privilégio','EBS gp3 como volume root padrão — melhor custo/performance que gp2'],
+    relations:['alb','rds','s3','ecs','lambda','ebs','elasticache','cloudwatch','vpc','iam','secretsmanager','natgateway'],
+    docUrl:'https://docs.aws.amazon.com/ec2/' },
+
+  { cat:'Compute', id:'lambda', name:'Lambda', short:'Funções serverless', icon:'λ', color:'#E8663D', bg:'#FFF0EB',
+    desc:'Executa código sem provisionar servidores. Paga por milissegundo. Ideal para eventos.',
+    tips:['Tempo máx. 15min — use Step Functions para fluxos longos','RDS Proxy obrigatório quando Lambda acessa RDS (evita esgotamento de conexões)','Provisioned Concurrency elimina cold starts em funções críticas','Lambda Layers para dependências compartilhadas entre funções'],
+    relations:['apigateway','dynamodb','s3','sqs','eventbridge','rds','secretsmanager','cloudwatch','iam','vpc','sns'],
+    docUrl:'https://docs.aws.amazon.com/lambda/' },
+
+  { cat:'Compute', id:'ecs', name:'ECS', short:'Containers gerenciados', icon:'📦', color:'#E8663D', bg:'#FFF0EB',
+    desc:'Orquestra contêineres Docker com Fargate (serverless) ou EC2. Ideal para microsserviços.',
+    tips:['Fargate: sem gerenciar servidores, escala automática por task','ECR obrigatório para armazenar imagens — nunca use Docker Hub direto em produção','ALB com Target Groups para roteamento por path entre serviços','ECS Service Connect para comunicação service-to-service'],
+    relations:['alb','ecr','rds','s3','secretsmanager','cloudwatch','xray','vpc','iam','sqs'],
+    docUrl:'https://docs.aws.amazon.com/ecs/' },
+
+  { cat:'Compute', id:'eks', name:'EKS', short:'Kubernetes gerenciado', icon:'⎈', color:'#E8663D', bg:'#FFF0EB',
+    desc:'Kubernetes totalmente gerenciado. Plano de controle gerenciado pela AWS. Ideal para times K8s.',
+    tips:['Managed Node Groups simplificam patching e lifecycle dos workers','AWS Load Balancer Controller para ALB Ingress nativo','IRSA (IAM Roles for Service Accounts) em vez de credenciais hardcoded','Karpenter para autoscaling de nodes mais rápido que Cluster Autoscaler'],
+    relations:['alb','ecr','rds','s3','cloudwatch','vpc','iam'],
+    docUrl:'https://docs.aws.amazon.com/eks/' },
+
+  // ── REDE ──
+  { cat:'Rede', id:'vpc', name:'VPC', short:'Rede privada virtual', icon:'🔷', color:'#8C4FFF', bg:'#F4EEFF',
+    desc:'Rede virtual isolada. Controle total de IPs, sub-redes, roteamento e gateways.',
+    tips:['SEMPRE separe sub-redes públicas (ALB, NAT) e privadas (EC2, RDS)','Habilite VPC Flow Logs — auditoria obrigatória para compliance','NACLs stateless + Security Groups stateful = defesa em profundidade','Use VPC Endpoints para S3/DynamoDB sem tráfego sair da AWS'],
+    relations:['ec2','rds','alb','natgateway','lambda','ecs','eks'],
+    docUrl:'https://docs.aws.amazon.com/vpc/' },
+
+  { cat:'Rede', id:'alb', name:'ALB', short:'Load Balancer L7', icon:'⚖️', color:'#8C4FFF', bg:'#F4EEFF',
+    desc:'Distribui tráfego HTTP/HTTPS. Roteamento inteligente por path, host e headers.',
+    tips:['ACM (Certificate Manager) para TLS gratuito — nunca gerencie certificados manualmente','Target Groups com Health Checks agridem instâncias doentes automaticamente','Access Logs no S3 para auditoria e análise de tráfego','WAF na frente do ALB para proteção OWASP Top 10'],
+    relations:['ec2','ecs','eks','lambda','waf','cloudwatch','vpc','route53','cognito'],
+    docUrl:'https://docs.aws.amazon.com/elasticloadbalancing/' },
+
+  { cat:'Rede', id:'cloudfront', name:'CloudFront', short:'CDN global 450+ PoPs', icon:'🌐', color:'#8C4FFF', bg:'#F4EEFF',
+    desc:'CDN com 450+ pontos de presença. Entrega conteúdo com latência mínima globalmente.',
+    tips:['Cache Behaviors diferentes por path: /api/* sem cache, /static/* com TTL longo','WAF + Shield Standard incluído — habilite Shield Advanced para proteção DDoS','Use com S3 para sites estáticos — nunca exponha S3 bucket público','Lambda@Edge ou CloudFront Functions para lógica no edge'],
+    relations:['s3','alb','apigateway','waf','route53'],
+    docUrl:'https://docs.aws.amazon.com/cloudfront/' },
+
+  { cat:'Rede', id:'route53', name:'Route 53', short:'DNS gerenciado', icon:'🌎', color:'#8C4FFF', bg:'#F4EEFF',
+    desc:'DNS altamente disponível com múltiplas políticas de roteamento.',
+    tips:['Alias records para recursos AWS são gratuitos e não têm TTL de propagação','Health Checks + Failover para disaster recovery automático','Latency-based routing para direcionar usuários à região mais próxima','Private Hosted Zones para DNS interno dentro de VPCs'],
+    relations:['cloudfront','alb','s3','apigateway'],
+    docUrl:'https://docs.aws.amazon.com/route53/' },
+
+  { cat:'Rede', id:'apigateway', name:'API Gateway', short:'APIs REST/HTTP/WebSocket', icon:'🔌', color:'#8C4FFF', bg:'#F4EEFF',
+    desc:'Cria, publica e gerencia APIs em qualquer escala. HTTP API 70% mais barata que REST.',
+    tips:['HTTP API para Lambda — mais simples e barata; REST API para funcionalidades avançadas','Authorizers Cognito ou Lambda para autenticação sem escrever código no backend','Throttling por stage e por método para proteger backends','Request/Response transformation no API Gateway evita lógica no Lambda'],
+    relations:['lambda','ec2','cognito','waf','cloudwatch','vpc'],
+    docUrl:'https://docs.aws.amazon.com/apigateway/' },
+
+  { cat:'Rede', id:'natgateway', name:'NAT Gateway', short:'Internet p/ sub-redes privadas', icon:'🚪', color:'#8C4FFF', bg:'#F4EEFF',
+    desc:'Permite que sub-redes privadas acessem internet sem expor IPs públicos.',
+    tips:['Um NAT Gateway POR AZ — cross-AZ data transfer tem custo extra','Use VPC Endpoints (S3, DynamoDB) para tráfego sem passar pelo NAT Gateway','Elastic IP fixo no NAT Gateway para allowlisting em IPs externos','Monitore NatGatewayBytesOutToInternet no CloudWatch para custos'],
+    relations:['vpc','ec2','ecs','lambda'],
+    docUrl:'https://docs.aws.amazon.com/vpc/latest/userguide/vpc-nat-gateway.html' },
+
+  // ── ARMAZENAMENTO ──
+  { cat:'Armazenamento', id:'s3', name:'S3', short:'Object storage infinito', icon:'🪣', color:'#3F8624', bg:'#EDF7E6',
+    desc:'Object storage com 11 noves de durabilidade. Backbone de data lakes, backups e sites estáticos.',
+    tips:['Block Public Access em nível de conta — NUNCA deixe bucket público por acidente','Versionamento obrigatório para dados críticos — proteção contra delete acidental','Lifecycle Policies: Standard → IA após 30d → Glacier após 90d','S3 Presigned URLs para compartilhar objetos privados temporariamente'],
+    relations:['cloudfront','lambda','ec2','glue','athena','codepipeline','ecs','redshift'],
+    docUrl:'https://docs.aws.amazon.com/s3/' },
+
+  { cat:'Armazenamento', id:'ebs', name:'EBS', short:'Block storage para EC2', icon:'💾', color:'#3F8624', bg:'#EDF7E6',
+    desc:'Volumes de bloco de alta performance para EC2. Como HD/SSD virtual persistente e de baixa latência.',
+    tips:['gp3 é o padrão atual — 20% mais barato e 3x mais rápido que gp2','Snapshots incrementais no S3 — agende via AWS Backup','io2 Block Express para bancos críticos (até 256k IOPS)','Instance Store é efêmero — NUNCA use para dados que precisam persistir'],
+    relations:['ec2'],
+    docUrl:'https://docs.aws.amazon.com/ebs/' },
+
+  { cat:'Armazenamento', id:'efs', name:'EFS', short:'File system NFS compartilhado', icon:'📁', color:'#3F8624', bg:'#EDF7E6',
+    desc:'NFS totalmente gerenciado. Escala de GBs a PBs. Compartilhado entre múltiplas instâncias.',
+    tips:['Standard-IA para arquivos acessados raramente — 77% mais barato','Monte em múltiplas AZs para alta disponibilidade automática','Provisioned Throughput quando bursting não é suficiente','EFS Access Points para controle granular de acesso por aplicação'],
+    relations:['ec2','ecs','eks','lambda'],
+    docUrl:'https://docs.aws.amazon.com/efs/' },
+
+  // ── BANCO DE DADOS ──
+  { cat:'Banco de Dados', id:'rds', name:'RDS', short:'SQL gerenciado', icon:'🗄️', color:'#1A73E8', bg:'#E8F0FE',
+    desc:'Bancos relacionais gerenciados: MySQL, PostgreSQL, Oracle, SQL Server, MariaDB.',
+    tips:['Multi-AZ obrigatório em produção — failover automático < 60s','Read Replicas para escalar leituras (até 5 réplicas)','RDS Proxy ESSENCIAL com Lambda — evita esgotamento de conexões','Secrets Manager para rotação automática de credenciais sem downtime'],
+    relations:['ec2','lambda','ecs','secretsmanager','elasticache','cloudwatch','vpc'],
+    docUrl:'https://docs.aws.amazon.com/rds/' },
+
+  { cat:'Banco de Dados', id:'dynamodb', name:'DynamoDB', short:'NoSQL serverless', icon:'⚡', color:'#1A73E8', bg:'#E8F0FE',
+    desc:'NoSQL totalmente gerenciado. Latência de milissegundos em qualquer escala. Serverless.',
+    tips:['Pense nos access patterns ANTES de definir tabela e índices — é irreversível','GSI para queries em atributos alternativos — custo extra de storage e throughput','DynamoDB Streams → Lambda para CDC (Change Data Capture)','Point-in-Time Recovery (PITR) habilitado sempre em produção'],
+    relations:['lambda','apigateway','ec2','cloudwatch','ecs'],
+    docUrl:'https://docs.aws.amazon.com/dynamodb/' },
+
+  { cat:'Banco de Dados', id:'elasticache', name:'ElastiCache', short:'Cache Redis / Memcached', icon:'⚙️', color:'#1A73E8', bg:'#E8F0FE',
+    desc:'Cache em memória gerenciado. Reduz latência e carga em bancos primários.',
+    tips:['Redis para sessões, pub/sub, rate limiting, ranking (Sorted Sets)','Memcached para cache de objetos puro e multi-threaded simples','ReplicationGroup Multi-AZ com failover automático para Redis em produção','Mesma VPC e AZ que a aplicação para latência mínima'],
+    relations:['ec2','lambda','rds','vpc'],
+    docUrl:'https://docs.aws.amazon.com/elasticache/' },
+
+  { cat:'Banco de Dados', id:'aurora', name:'Aurora', short:'MySQL/PostgreSQL 5× mais rápido', icon:'✨', color:'#1A73E8', bg:'#E8F0FE',
+    desc:'Banco MySQL/PostgreSQL compatível, 5× mais rápido. Storage distribuído em 3 AZs, 6 cópias.',
+    tips:['Aurora Serverless v2 escala em 0.5 ACU — ideal para workloads variáveis','Aurora Global Database para multi-região com RPO < 1 segundo','Até 15 Read Replicas (vs 5 do RDS) — melhor para reads intensos','100% compatível com drivers MySQL e PostgreSQL — migração simples'],
+    relations:['ec2','lambda','secretsmanager','cloudwatch','vpc','ecs'],
+    docUrl:'https://docs.aws.amazon.com/aurora/' },
+
+  // ── SEGURANÇA ──
+  { cat:'Segurança', id:'iam', name:'IAM', short:'Identidade e acesso', icon:'🔐', color:'#CC0000', bg:'#FFEBEB',
+    desc:'Controla quem pode fazer o quê na AWS. Users, Groups, Roles e Policies.',
+    tips:['NUNCA use credenciais root — crie admin IAM user com MFA','Roles > Access Keys para serviços AWS — sem credenciais long-term','IAM Access Analyzer detecta permissões excessivas automaticamente','SCPs no AWS Organizations para guardrails em múltiplas contas'],
+    relations:['ec2','lambda','s3','rds','ecs','eks'],
+    docUrl:'https://docs.aws.amazon.com/iam/' },
+
+  { cat:'Segurança', id:'cognito', name:'Cognito', short:'Auth de usuários finais', icon:'👤', color:'#CC0000', bg:'#FFEBEB',
+    desc:'Gerencia sign-up/sign-in com MFA. User Pools para auth; Identity Pools para credenciais AWS.',
+    tips:['User Pools integram nativamente com ALB e API Gateway sem código extra','Suporta federação: Google, Facebook, SAML, OIDC — Single Sign-On grátis','MFA obrigatório para aplicações com dados sensíveis','Lambda Triggers para customizar fluxos de autenticação'],
+    relations:['apigateway','alb','lambda'],
+    docUrl:'https://docs.aws.amazon.com/cognito/' },
+
+  { cat:'Segurança', id:'secretsmanager', name:'Secrets Manager', short:'Gerencia e rotaciona segredos', icon:'🔑', color:'#CC0000', bg:'#FFEBEB',
+    desc:'Armazena e rotaciona automaticamente credenciais, API keys e tokens. Integra com RDS.',
+    tips:['NUNCA coloque senhas em variáveis de ambiente ou código-fonte','Rotação automática integrada com RDS, Aurora, Redshift sem downtime','Cache SDK do Secrets Manager para reduzir chamadas (e custo)','Políticas IAM granulares: qual role pode ler qual secret'],
+    relations:['rds','lambda','ecs','ec2','aurora'],
+    docUrl:'https://docs.aws.amazon.com/secretsmanager/' },
+
+  { cat:'Segurança', id:'waf', name:'WAF', short:'Web Application Firewall', icon:'🛡️', color:'#CC0000', bg:'#FFEBEB',
+    desc:'Protege contra SQL Injection, XSS, bots e DDoS camada 7. Funciona com CloudFront e ALB.',
+    tips:['AWS Managed Rules como ponto de partida — OWASP Top 10 coberto','Rate-based rules para proteção contra brute force e scraping','Logging no Kinesis Firehose → S3 para análise e compliance','Associe SEMPRE com CloudFront ou ALB — nunca bypasse o WAF'],
+    relations:['cloudfront','alb','apigateway'],
+    docUrl:'https://docs.aws.amazon.com/waf/' },
+
+  // ── MENSAGERIA ──
+  { cat:'Mensageria', id:'sqs', name:'SQS', short:'Fila de mensagens gerenciada', icon:'📨', color:'#FF6600', bg:'#FFF3E8',
+    desc:'Fila gerenciada para desacoplar produtores e consumidores. Standard ou FIFO.',
+    tips:['Dead Letter Queue (DLQ) obrigatória — captura mensagens que falharam repetidamente','Visibility Timeout deve ser maior que o tempo de processamento','Long Polling (20s) reduz custo e latência vs Short Polling','FIFO Queue para order-critical workflows (entrega exatamente uma vez)'],
+    relations:['lambda','ec2','ecs','sns','eventbridge','cloudwatch'],
+    docUrl:'https://docs.aws.amazon.com/sqs/' },
+
+  { cat:'Mensageria', id:'sns', name:'SNS', short:'Pub/Sub e notificações push', icon:'📢', color:'#FF6600', bg:'#FFF3E8',
+    desc:'Pub/Sub gerenciado. Um tópico → múltiplos subscribers: SQS, Lambda, Email, SMS.',
+    tips:['Fan-out: SNS → múltiplos SQS para processamento paralelo independente','Message Filtering evita que subscribers recebam mensagens desnecessárias','FIFO Topic + FIFO Queue para mensagens ordenadas e deduplicadas','SNS → CloudWatch Alarms para alertas operacionais automáticos'],
+    relations:['sqs','lambda','ec2','cloudwatch'],
+    docUrl:'https://docs.aws.amazon.com/sns/' },
+
+  { cat:'Mensageria', id:'eventbridge', name:'EventBridge', short:'Event Bus serverless', icon:'🔄', color:'#FF6600', bg:'#FFF3E8',
+    desc:'Event bus serverless que conecta aplicações via eventos (AWS, SaaS ou custom).',
+    tips:['Rules com Event Patterns para filtrar e rotear eventos sem código','Archive + Replay para depurar e reprocessar eventos históricos','Schema Registry descobre schemas automaticamente — documentação viva','Use para desacoplar microsserviços: melhor que chamadas síncronas diretas'],
+    relations:['lambda','sqs','ecs','ec2','cloudwatch'],
+    docUrl:'https://docs.aws.amazon.com/eventbridge/' },
+
+  // ── ANALYTICS ──
+  { cat:'Analytics', id:'athena', name:'Athena', short:'SQL sobre S3 (serverless)', icon:'🔍', color:'#006EAF', bg:'#E6F5FF',
+    desc:'Query SQL diretamente no S3 com Presto. Serverless — paga por TB escaneado.',
+    tips:['Parquet/ORC reduz custo em até 90% vs CSV — converta sempre com Glue','Particionamento por data/região é CRÍTICO — reduz dados escaneados drasticamente','Workgroups para controlar custo máximo por time ou projeto','Federated Query para consultar RDS, DynamoDB e outros direto do Athena'],
+    relations:['s3','glue'],
+    docUrl:'https://docs.aws.amazon.com/athena/' },
+
+  { cat:'Analytics', id:'glue', name:'Glue', short:'ETL serverless + Data Catalog', icon:'🔗', color:'#006EAF', bg:'#E6F5FF',
+    desc:'ETL serverless (Spark), Data Catalog e Crawlers. Integra com Athena, Redshift e EMR.',
+    tips:['Crawler para descoberta automática de schema — rode após cada carga de dados','Data Catalog é a fonte única de verdade de metadados para Athena e Redshift','Bookmarks para processamento incremental — evita reprocessar dados antigos','Glue Studio para ETL visual sem código'],
+    relations:['s3','athena','rds','redshift'],
+    docUrl:'https://docs.aws.amazon.com/glue/' },
+
+  { cat:'Analytics', id:'redshift', name:'Redshift', short:'Data Warehouse colunar', icon:'📊', color:'#006EAF', bg:'#E6F5FF',
+    desc:'Data warehouse colunar para analytics em petabytes. OLAP de alta performance.',
+    tips:['Redshift Serverless para workloads variáveis — sem clusters para gerenciar','COPY command para carga paralela do S3 — muito mais rápido que INSERT','Sort Keys e Distribution Keys corretos são CRÍTICOS para performance','Redshift Spectrum consulta S3 sem carregar dados no cluster'],
+    relations:['s3','glue','ec2'],
+    docUrl:'https://docs.aws.amazon.com/redshift/' },
+
+  // ── DEVOPS ──
+  { cat:'DevOps', id:'codepipeline', name:'CodePipeline', short:'CI/CD gerenciado', icon:'🚀', color:'#6B21A8', bg:'#F3E8FF',
+    desc:'Automação de CI/CD. Orquestra source, build, test e deploy. Integra com GitHub e mais.',
+    tips:['Aprovação manual antes de deploy em produção — não automatize tudo','CodeDeploy para Blue/Green no EC2 e ECS com rollback automático','Artefatos no S3 — configure Lifecycle Policy para limpeza automática','Notifications no SNS ou Slack para status do pipeline'],
+    relations:['codebuild','ecr','s3','ec2','ecs'],
+    docUrl:'https://docs.aws.amazon.com/codepipeline/' },
+
+  { cat:'DevOps', id:'codebuild', name:'CodeBuild', short:'Build e testes na nuvem', icon:'🔨', color:'#6B21A8', bg:'#F3E8FF',
+    desc:'Compila, testa e gera artefatos. Totalmente gerenciado e escalável. Sem servidores.',
+    tips:['buildspec.yml define phases: install, pre_build, build, post_build','Cache de dependências no S3 — reduz tempo de build significativamente','Imagens Docker customizadas para ambientes de build específicos','Reports integrados: JUnit, TestNG, Cucumber para visibilidade de testes'],
+    relations:['codepipeline','ecr','s3'],
+    docUrl:'https://docs.aws.amazon.com/codebuild/' },
+
+  { cat:'DevOps', id:'ecr', name:'ECR', short:'Container Registry privado', icon:'🗃️', color:'#6B21A8', bg:'#F3E8FF',
+    desc:'Registry Docker gerenciado e privado. Integra nativamente com ECS, EKS e Lambda.',
+    tips:['Enhanced Scanning (Inspector) detecta vulnerabilidades — habilite em todos os repos','Lifecycle Policies: mantenha apenas N últimas versões para controlar custo','ECR Replication para imagens em múltiplas regiões','Pull Through Cache para espelhar Docker Hub e evitar rate limits'],
+    relations:['ecs','eks','codebuild','codepipeline'],
+    docUrl:'https://docs.aws.amazon.com/ecr/' },
+
+  // ── MONITORAMENTO ──
+  { cat:'Monitoramento', id:'cloudwatch', name:'CloudWatch', short:'Métricas, logs e alarmes', icon:'📈', color:'#0F4880', bg:'#E8F4FF',
+    desc:'Coleta métricas, logs e eventos de toda a AWS. Dashboards, alarmes e automação.',
+    tips:['Alarms → Auto Scaling, SNS, EC2 recovery — monitoramento ativo, não passivo','Logs Insights para queries SQL-like em terabytes de logs em segundos','Container Insights para métricas de ECS/EKS por container','Composite Alarms para condições complexas sem alarmes falsos'],
+    relations:['ec2','lambda','rds','ecs','alb','sqs','sns'],
+    docUrl:'https://docs.aws.amazon.com/cloudwatch/' },
+
+  { cat:'Monitoramento', id:'xray', name:'X-Ray', short:'Tracing distribuído', icon:'🔬', color:'#0F4880', bg:'#E8F4FF',
+    desc:'Rastreia requests em microsserviços. Service Map visual com latência por componente.',
+    tips:['SDK integra com Lambda, EC2, ECS, API Gateway em poucas linhas de código','Service Map mostra a arquitetura REAL com latência p50/p90/p99','Sampling Rules para equilibrar custo e visibilidade em alta throughput','CloudWatch ServiceLens correlaciona traces, logs e métricas'],
+    relations:['lambda','ec2','ecs','apigateway','cloudwatch'],
+    docUrl:'https://docs.aws.amazon.com/xray/' },
+];
+
+// ──────────────────────────────────────────────────────────────────────────────
+//  MOTOR DE REGRAS ARQUITETURAIS
+//  Formato de cada regra:
+//    type: 'prereq'    → serviceId PRECISA de requires[] no canvas
+//    type: 'conn_req'  → conexão A→B exige que serviceId C esteja no canvas
+//    type: 'blocked'   → conexão direta entre from e to é PROIBIDA
+//    type: 'incompat'  → dois serviços não podem existir sem um mediador
+//    type: 'warn_solo' → serviço isolado (sem conexões) gera aviso
+//    type: 'warn_conn' → conexão permitida mas com aviso de cuidado
+// ──────────────────────────────────────────────────────────────────────────────
+const RULES = [
+
+  // ── PRÉ-REQUISITOS: serviço X requer Y no canvas antes ──────────────────────
+
+  // RDS sem VPC é errado (banco exposto)
+  { type:'prereq', service:'rds',
+    requires:['vpc'],
+    severity:'err',
+    title:'RDS requer VPC',
+    msg:'RDS deve sempre estar dentro de uma VPC em sub-rede privada. Nunca exponha um banco de dados diretamente à internet. Adicione uma VPC antes de usar RDS.' },
+
+  // Aurora segue a mesma regra
+  { type:'prereq', service:'aurora',
+    requires:['vpc'],
+    severity:'err',
+    title:'Aurora requer VPC',
+    msg:'Aurora deve estar em sub-rede privada dentro de uma VPC. Adicione uma VPC primeiro.' },
+
+  // ElastiCache sem VPC não faz sentido em produção
+  { type:'prereq', service:'elasticache',
+    requires:['vpc'],
+    severity:'warn',
+    title:'ElastiCache requer VPC',
+    msg:'ElastiCache deve ser colocado na mesma VPC que a aplicação para latência mínima e segurança. Configure uma VPC primeiro.' },
+
+  // ECS sem ECR em produção é má prática
+  { type:'prereq', service:'ecs',
+    requires:['ecr'],
+    severity:'warn',
+    title:'ECS sem ECR',
+    msg:'ECS em produção deve usar imagens do ECR (Container Registry privado), não do Docker Hub público. Adicione o ECR para armazenar suas imagens com segurança e scan de vulnerabilidades.' },
+
+  // EKS sem ECR também
+  { type:'prereq', service:'eks',
+    requires:['ecr'],
+    severity:'warn',
+    title:'EKS sem ECR',
+    msg:'EKS deve usar imagens do ECR privado em produção. Docker Hub tem rate limits e riscos de segurança.' },
+
+  // NAT Gateway só faz sentido dentro de VPC
+  { type:'prereq', service:'natgateway',
+    requires:['vpc'],
+    severity:'err',
+    title:'NAT Gateway requer VPC',
+    msg:'NAT Gateway existe para dar saída à internet para sub-redes privadas de uma VPC. Sem VPC, o NAT Gateway não tem propósito. Adicione uma VPC primeiro.' },
+
+  // ALB sem VPC não é possível
+  { type:'prereq', service:'alb',
+    requires:['vpc'],
+    severity:'err',
+    title:'ALB requer VPC',
+    msg:'O Application Load Balancer deve ser implantado dentro de uma VPC (em sub-redes públicas). Adicione uma VPC antes do ALB.' },
+
+  // WAF deve ter o que proteger
+  { type:'prereq', service:'waf',
+    requires:['cloudfront','alb','apigateway'],
+    requiresMode:'any',
+    severity:'warn',
+    title:'WAF sem alvo de proteção',
+    msg:'O WAF precisa ser associado a um recurso para proteger: CloudFront, ALB ou API Gateway. Adicione pelo menos um deles para que o WAF tenha utilidade.' },
+
+  // CodeBuild sem CodePipeline (aviso — pode ser usado standalone, mas raro)
+  { type:'prereq', service:'codebuild',
+    requires:['codepipeline'],
+    severity:'warn',
+    title:'CodeBuild sem pipeline',
+    msg:'CodeBuild normalmente faz parte de um CodePipeline. Sem um pipeline orquestrando, builds precisam ser disparados manualmente ou por webhook. Adicione CodePipeline para automação completa de CI/CD.' },
+
+  // ECR sem ECS ou EKS (pode ser usado com Lambda, mas aviso)
+  { type:'prereq', service:'ecr',
+    requires:['ecs','eks','lambda'],
+    requiresMode:'any',
+    severity:'warn',
+    title:'ECR sem consumidor de imagens',
+    msg:'ECR armazena imagens Docker. Sem ECS, EKS ou Lambda para consumi-las, o registry está ocioso. Adicione um orquestrador de containers.' },
+
+  // Athena precisa de S3 (dados) e idealmente Glue (catálogo)
+  { type:'prereq', service:'athena',
+    requires:['s3'],
+    severity:'err',
+    title:'Athena requer S3',
+    msg:'Athena executa queries diretamente sobre dados no S3. Sem S3 no diagrama, o Athena não tem dados para consultar. Adicione um bucket S3 primeiro.' },
+
+  { type:'prereq', service:'athena',
+    requires:['glue'],
+    severity:'warn',
+    title:'Athena sem Glue Data Catalog',
+    msg:'Sem Glue, o Athena usa um catálogo interno limitado. O Glue Data Catalog é a prática recomendada para gerenciar schemas e integrar com outros serviços como Redshift Spectrum.' },
+
+  // Glue sem S3
+  { type:'prereq', service:'glue',
+    requires:['s3'],
+    severity:'warn',
+    title:'Glue sem S3',
+    msg:'AWS Glue normalmente processa dados de/para o S3. Sem S3, os jobs ETL não têm origem ou destino padrão. Adicione S3 para armazenar os dados brutos e processados.' },
+
+  // CloudFront para sites estáticos requer S3 ou ALB
+  { type:'prereq', service:'cloudfront',
+    requires:['s3','alb','apigateway'],
+    requiresMode:'any',
+    severity:'warn',
+    title:'CloudFront sem origem',
+    msg:'CloudFront é uma CDN que precisa de uma origem para cachear: S3 (conteúdo estático), ALB (aplicação) ou API Gateway (APIs). Adicione pelo menos uma origem.' },
+
+  // Secrets Manager sem consumidor
+  { type:'prereq', service:'secretsmanager',
+    requires:['rds','aurora','lambda','ecs','ec2'],
+    requiresMode:'any',
+    severity:'warn',
+    title:'Secrets Manager sem consumidor',
+    msg:'Secrets Manager armazena credenciais para outros serviços. Sem RDS, Aurora, Lambda, ECS ou EC2, quem vai consumir os segredos? Adicione o serviço que usará as credenciais.' },
+
+  // Lambda sem IAM Role é inválido (toda Lambda precisa de uma execution role)
+  { type:'prereq', service:'lambda',
+    requires:['iam'],
+    severity:'warn',
+    title:'Lambda sem IAM',
+    msg:'Toda função Lambda precisa de uma Execution Role IAM com permissões mínimas. Sem IAM no diagrama, as permissões estão implícitas mas não documentadas. Adicione IAM para representar o controle de acesso.' },
+
+  // EBS precisa de EC2 (não faz sentido sozinho)
+  { type:'prereq', service:'ebs',
+    requires:['ec2'],
+    severity:'err',
+    title:'EBS requer EC2',
+    msg:'EBS é um volume de armazenamento em bloco que deve ser montado em uma instância EC2. Sem EC2, o EBS não pode ser utilizado. Adicione EC2 primeiro.' },
+
+  // Redshift sem dados para carregar
+  { type:'prereq', service:'redshift',
+    requires:['s3','glue'],
+    requiresMode:'any',
+    severity:'warn',
+    title:'Redshift sem fonte de dados',
+    msg:'Redshift é um data warehouse que precisa de dados para analisar. Adicione S3 (para COPY command) ou Glue (para ETL) para carregar dados no cluster.' },
+
+  // ── CONEXÕES DEPENDENTES: A→B exige C presente ──────────────────────────────
+
+  // Lambda → RDS exige RDS Proxy (boa prática crítica)
+  { type:'conn_req', from:'lambda', to:'rds',
+    requires:'rdsproxy',
+    severity:'warn',
+    title:'Lambda → RDS sem RDS Proxy',
+    msg:'Lambda cria uma nova conexão ao banco a cada invocação. Em alta concorrência, isso esgota o pool de conexões do RDS em segundos. RDS Proxy agrupa conexões e é ESSENCIAL nesse padrão. Na prática, adicione "RDS Proxy" entre Lambda e RDS.' },
+
+  // Lambda → Aurora mesma regra
+  { type:'conn_req', from:'lambda', to:'aurora',
+    requires:'rdsproxy',
+    severity:'warn',
+    title:'Lambda → Aurora sem RDS Proxy',
+    msg:'Lambda + Aurora sem RDS Proxy causa esgotamento de conexões em escala. RDS Proxy é a solução recomendada pela AWS para esse padrão. Represente o RDS Proxy como um nó intermediário.' },
+
+  // ECS → RDS exige Secrets Manager (credenciais)
+  { type:'conn_req', from:'ecs', to:'rds',
+    requires:'secretsmanager',
+    severity:'warn',
+    title:'ECS → RDS sem Secrets Manager',
+    msg:'Containers ECS não devem ter credenciais hardcoded. Use Secrets Manager para injetar credenciais do banco em tempo de execução de forma segura e com rotação automática.' },
+
+  // EC2 → RDS exige Secrets Manager
+  { type:'conn_req', from:'ec2', to:'rds',
+    requires:'secretsmanager',
+    severity:'warn',
+    title:'EC2 → RDS sem Secrets Manager',
+    msg:'Credenciais de banco hardcoded em instâncias EC2 são um risco de segurança crítico. Use Secrets Manager para gerenciar e rotacionar credenciais automaticamente.' },
+
+  // CloudFront → S3 requer que o S3 NÃO seja público (WAF/OAI)
+  { type:'conn_req', from:'cloudfront', to:'s3',
+    requires:'waf',
+    severity:'warn',
+    title:'CloudFront → S3 sem WAF',
+    msg:'Ao usar CloudFront com S3, configure Origin Access Control (OAC) para que o S3 só aceite requisições do CloudFront. Adicione WAF para proteger contra ataques na borda.' },
+
+  // ALB exposto sem WAF
+  { type:'conn_req', from:'route53', to:'alb',
+    requires:'waf',
+    severity:'warn',
+    title:'Tráfego externo → ALB sem WAF',
+    msg:'ALB exposto à internet sem WAF fica vulnerável a SQL Injection, XSS e ataques de força bruta. O WAF é fundamental para produção. Adicione WAF antes do ALB.' },
+
+  // CodePipeline → ECS exige ECR (precisa da imagem)
+  { type:'conn_req', from:'codepipeline', to:'ecs',
+    requires:'ecr',
+    severity:'err',
+    title:'Pipeline → ECS sem ECR',
+    msg:'Para fazer deploy de containers no ECS via CodePipeline, você precisa do ECR para armazenar as imagens Docker buildadas pelo CodeBuild. ECR é obrigatório nesse fluxo.' },
+
+  // ── CONEXÕES BLOQUEADAS: nunca devem ser feitas diretamente ─────────────────
+
+  // RDS não deve ser conectado diretamente à internet (sem VPC)
+  { type:'blocked', from:'rds', to:'cloudfront',
+    severity:'err',
+    title:'RDS não pode conectar ao CloudFront',
+    msg:'RDS é um banco de dados e nunca deve ser exposto via CDN. CloudFront serve conteúdo estático e APIs HTTP — não conexões de banco de dados. Essa conexão é arquiteturalmente inválida.' },
+
+  { type:'blocked', from:'rds', to:'route53',
+    severity:'err',
+    title:'RDS não se conecta ao Route 53',
+    msg:'Route 53 resolve nomes DNS para recursos de rede (ALB, CloudFront, S3). RDS não é acessado via DNS público — fica em sub-rede privada da VPC. Essa conexão não faz sentido.' },
+
+  { type:'blocked', from:'dynamodb', to:'cloudfront',
+    severity:'err',
+    title:'DynamoDB não conecta ao CloudFront',
+    msg:'DynamoDB é um banco de dados acessado via SDK/API, não via CDN. Essa conexão é arquiteturalmente inválida. Use Lambda ou EC2 como intermediário.' },
+
+  { type:'blocked', from:'s3', to:'rds',
+    severity:'err',
+    title:'S3 não se conecta diretamente ao RDS',
+    msg:'S3 é object storage; RDS é banco relacional. Eles não se comunicam diretamente. Use Lambda ou Glue ETL para processar dados do S3 e inserir no RDS.' },
+
+  { type:'blocked', from:'ebs', to:'lambda',
+    severity:'err',
+    title:'EBS não se conecta ao Lambda',
+    msg:'EBS é um volume de bloco que só pode ser montado em instâncias EC2. Lambda usa EFS para sistema de arquivos compartilhado ou S3 para objetos. Substitua EBS por EFS ou S3.' },
+
+  { type:'blocked', from:'ebs', to:'ecs',
+    severity:'err',
+    title:'EBS não é compatível com ECS Fargate',
+    msg:'EBS não pode ser montado em tarefas ECS Fargate. Para storage compartilhado em containers, use EFS (NFS gerenciado). Substitua EBS por EFS.' },
+
+  { type:'blocked', from:'ebs', to:'rds',
+    severity:'err',
+    title:'EBS é gerenciado internamente pelo RDS',
+    msg:'RDS gerencia seu próprio EBS internamente. Você não conecta EBS ao RDS explicitamente — o serviço faz isso automaticamente. Remova essa conexão.' },
+
+  { type:'blocked', from:'codepipeline', to:'lambda',
+    severity:'warn',
+    title:'CodePipeline → Lambda direto é incomum',
+    msg:'CodePipeline não faz deploy direto de código Lambda. O fluxo correto é: CodePipeline → CodeBuild (gera ZIP) → S3 → Lambda (atualiza função). Revise a arquitetura.' },
+
+  { type:'blocked', from:'elasticache', to:'s3',
+    severity:'err',
+    title:'ElastiCache não se conecta ao S3',
+    msg:'ElastiCache é cache em memória — não persiste dados no S3. Essa conexão não é válida. Se precisar persistir dados cacheados, faça isso na aplicação (EC2/Lambda) que lê o cache.' },
+
+  { type:'blocked', from:'athena', to:'rds',
+    severity:'warn',
+    title:'Athena → RDS não é o fluxo padrão',
+    msg:'Athena consulta dados no S3, não no RDS diretamente. Para consultar RDS com Athena, você usaria Athena Federated Query (via Lambda connector). Esse fluxo é avançado — normalmente faça: RDS → Glue ETL → S3 → Athena.' },
+
+  // ── AVISOS DE SERVIÇO SOLO ────────────────────────────────────────────────
+
+  { type:'warn_solo', service:'waf',
+    msg:'WAF sem conexão com CloudFront, ALB ou API Gateway não está protegendo nada. Conecte-o a um desses serviços.' },
+
+  { type:'warn_solo', service:'iam',
+    msg:'IAM está no diagrama mas sem conexões. Conecte-o aos serviços que ele autoriza (EC2, Lambda, S3, RDS) para documentar o controle de acesso.' },
+
+  { type:'warn_solo', service:'cloudwatch',
+    msg:'CloudWatch isolado não monitora nada. Conecte-o aos serviços que você quer observar.' },
+
+  { type:'warn_solo', service:'natgateway',
+    msg:'NAT Gateway sem conexão com EC2, ECS ou Lambda em sub-rede privada não serve a nenhum propósito.' },
+
+  // ── AVISOS DE CONEXÃO ──────────────────────────────────────────────────────
+
+  { type:'warn_conn', from:'ec2', to:'s3',
+    msg:'EC2 acessando S3 diretamente: use um VPC Endpoint para S3 para evitar que o tráfego saia da rede AWS (mais seguro e sem custo de NAT Gateway).' },
+
+  { type:'warn_conn', from:'lambda', to:'dynamodb',
+    msg:'Lambda + DynamoDB: ótima combinação serverless! Certifique-se de usar variáveis de ambiente para o nome da tabela e IAM Role com permissões mínimas (apenas as ações necessárias).' },
+
+  { type:'warn_conn', from:'alb', to:'ec2',
+    msg:'ALB → EC2: configure um Auto Scaling Group para que o ALB distribua carga entre múltiplas instâncias. Um único EC2 atrás de ALB é Single Point of Failure.' },
+
+  { type:'warn_conn', from:'cloudfront', to:'alb',
+    msg:'CloudFront → ALB: configure o ALB para aceitar requisições APENAS do CloudFront (via cabeçalho customizado secreto). Isso evita bypass do WAF e CloudFront.' },
+];
+
+// ──────────────────────────────────────────────────────────────────────────────
+//  ESTADO DA APLICAÇÃO
+// ──────────────────────────────────────────────────────────────────────────────
+let nodes        = [];    // [{id, serviceId, x, y}]
+let connections  = [];    // [{id, from, to}]
+let regions      = [];    // [{id, label, color, x, y, w, h}]
+let selectedNode = null;
+let connectingFrom = null;
+let nodeIdCtr    = 0;
+let regionIdCtr  = 0;
+let connIdCtr    = 0;
+let modalCallback = null;
+
+const REGION_COLORS = ['#8C4FFF','#3F8624','#1A73E8','#CC0000','#FF6600','#E8663D'];
+const REGION_LABELS = ['us-east-1','us-west-2','eu-west-1','sa-east-1','ap-northeast-1','eu-central-1'];
+
+// ──────────────────────────────────────────────────────────────────────────────
+//  MOTOR DE VALIDAÇÃO
+// ──────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Retorna todos os IDs de serviços presentes no canvas.
+ */
+function presentServiceIds() {
+  return new Set(nodes.map(n => n.serviceId));
+}
+
+/**
+ * Checa se um serviceId está conectado a algum outro nó.
+ */
+function isConnected(nodeId) {
+  return connections.some(c => c.from === nodeId || c.to === nodeId);
+}
+
+/**
+ * Retorna lista de IDs de serviços que estão conectados ao nó passado.
+ */
+function connectedServiceIds(nodeId) {
+  const ids = new Set();
+  connections.forEach(c => {
+    if (c.from === nodeId) { const n = nodes.find(x => x.id === c.to);   if (n) ids.add(n.serviceId); }
+    if (c.to   === nodeId) { const n = nodes.find(x => x.id === c.from); if (n) ids.add(n.serviceId); }
+  });
+  return ids;
+}
+
+/**
+ * Valida o diagrama inteiro e retorna issues por nodeId.
+ * Retorna: Map<nodeId, [{severity, title, msg}]>
+ */
+function validateDiagram() {
+  const issues = new Map(); // nodeId → [{severity, title, msg}]
+  const present = presentServiceIds();
+
+  const addIssue = (nodeId, severity, title, msg) => {
+    if (!issues.has(nodeId)) issues.set(nodeId, []);
+    issues.get(nodeId).push({ severity, title, msg });
+  };
+
+  nodes.forEach(node => {
+    const svcId = node.serviceId;
+    const connSvcs = connectedServiceIds(node.id);
+
+    RULES.forEach(rule => {
+      // ── PRÉ-REQUISITO ──
+      if (rule.type === 'prereq' && rule.service === svcId) {
+        const mode = rule.requiresMode || 'all';
+        if (mode === 'all') {
+          const missing = rule.requires.filter(r => !present.has(r));
+          if (missing.length > 0) {
+            const names = missing.map(r => SERVICES.find(s => s.id === r)?.name || r).join(', ');
+            addIssue(node.id, rule.severity, rule.title,
+              rule.msg + ` (faltando: ${names})`);
+          }
+        } else { // 'any'
+          const hasAny = rule.requires.some(r => present.has(r));
+          if (!hasAny) {
+            const names = rule.requires.map(r => SERVICES.find(s => s.id === r)?.name || r).join(' ou ');
+            addIssue(node.id, rule.severity, rule.title,
+              rule.msg + ` (adicione: ${names})`);
+          }
+        }
+      }
+
+      // ── AVISO SOLO ──
+      if (rule.type === 'warn_solo' && rule.service === svcId) {
+        if (!isConnected(node.id)) {
+          addIssue(node.id, 'warn', 'Serviço isolado', rule.msg);
+        }
+      }
+
+      // ── AVISO DE CONEXÃO ──
+      if (rule.type === 'warn_conn') {
+        const connected =
+          (svcId === rule.from && connSvcs.has(rule.to)) ||
+          (svcId === rule.to   && connSvcs.has(rule.from));
+        if (connected) {
+          addIssue(node.id, 'warn', 'Atenção nessa conexão', rule.msg);
+        }
+      }
+
+      // ── CONEXÃO DEPENDENTE ──
+      if (rule.type === 'conn_req') {
+        const isFrom = svcId === rule.from && connSvcs.has(rule.to);
+        const isTo   = svcId === rule.to   && connSvcs.has(rule.from);
+        if ((isFrom || isTo) && !present.has(rule.requires)) {
+          addIssue(node.id, rule.severity, rule.title, rule.msg);
+        }
+      }
+
+      // ── CONEXÃO BLOQUEADA ──
+      if (rule.type === 'blocked') {
+        const isFrom = svcId === rule.from && connSvcs.has(rule.to);
+        const isTo   = svcId === rule.to   && connSvcs.has(rule.from);
+        if (isFrom || isTo) {
+          addIssue(node.id, rule.severity, rule.title, rule.msg);
+        }
+      }
+    });
+  });
+
+  return issues;
+}
+
+/**
+ * Valida uma conexão específica antes de criá-la.
+ * Retorna {ok: bool, severity, title, msg} ou null se tudo certo.
+ */
+function validateConnection(fromSvcId, toSvcId) {
+  const present = presentServiceIds();
+  const results = [];
+
+  RULES.forEach(rule => {
+    if (rule.type === 'blocked') {
+      if ((rule.from === fromSvcId && rule.to === toSvcId) ||
+          (rule.from === toSvcId   && rule.to === fromSvcId)) {
+        results.push({ ok: false, severity: rule.severity, title: rule.title, msg: rule.msg });
+      }
+    }
+    if (rule.type === 'conn_req') {
+      if ((rule.from === fromSvcId && rule.to === toSvcId) ||
+          (rule.from === toSvcId   && rule.to === fromSvcId)) {
+        if (!present.has(rule.requires)) {
+          const rName = SERVICES.find(s => s.id === rule.requires)?.name || rule.requires;
+          results.push({ ok: true, severity: rule.severity, title: rule.title,
+            msg: rule.msg + ` → Adicione ${rName} ao diagrama.` });
+        }
+      }
+    }
+    if (rule.type === 'warn_conn') {
+      if ((rule.from === fromSvcId && rule.to === toSvcId) ||
+          (rule.from === toSvcId   && rule.to === fromSvcId)) {
+        results.push({ ok: true, severity:'warn', title: rule.title || 'Atenção', msg: rule.msg });
+      }
+    }
+  });
+
+  return results.length > 0 ? results[0] : null;
+}
+
+/**
+ * Atualiza a aparência visual de todos os nós com base na validação.
+ */
+function applyValidationStyles() {
+  const issues = validateDiagram();
+  let errCount = 0, warnCount = 0;
+
+  nodes.forEach(node => {
+    const el = document.getElementById(node.id);
+    if (!el) return;
+
+    el.classList.remove('node-ok','node-warn','node-err');
+    const badge = el.querySelector('.node-badge');
+    if (badge) badge.remove();
+
+    const nodeIssues = issues.get(node.id) || [];
+    const hasErr  = nodeIssues.some(i => i.severity === 'err');
+    const hasWarn = nodeIssues.some(i => i.severity === 'warn');
+
+    if (hasErr) {
+      el.classList.add('node-err');
+      errCount++;
+      addBadge(el, '✕', 'err', nodeIssues.filter(i => i.severity==='err')[0]?.title);
+    } else if (hasWarn) {
+      el.classList.add('node-warn');
+      warnCount++;
+      addBadge(el, '!', 'warn', nodeIssues.filter(i => i.severity==='warn')[0]?.title);
+    } else if (isConnected(node.id)) {
+      el.classList.add('node-ok');
+      addBadge(el, '✓', 'ok', 'Sem problemas detectados');
+    }
+  });
+
+  document.getElementById('ec').textContent = errCount;
+  document.getElementById('wc').textContent = warnCount;
+  document.getElementById('nc').textContent = nodes.length;
+  document.getElementById('cc').textContent = connections.length;
+
+  const dot = document.getElementById('status-dot');
+  dot.style.background = errCount > 0 ? 'var(--err)' : warnCount > 0 ? 'var(--warn)' : 'var(--ok)';
+
+  // Se nó está selecionado, recarrega info com diagnóstico atualizado
+  if (selectedNode) showInfo(selectedNode);
+
+  return issues;
+}
+
+function addBadge(el, text, cls, tooltip) {
+  const b = document.createElement('div');
+  b.className = `node-badge ${cls}`;
+  b.textContent = text;
+  b.title = tooltip || '';
+  b.style.color = '#fff';
+  el.appendChild(b);
+}
+
+/**
+ * Valida e exibe resultados em modal / toast.
+ */
+function validateAll() {
+  const issues = applyValidationStyles();
+  let errCount = 0, warnCount = 0;
+  issues.forEach(list => list.forEach(i => {
+    if (i.severity === 'err') errCount++;
+    else warnCount++;
+  }));
+
+  if (errCount === 0 && warnCount === 0 && nodes.length > 0) {
+    toast('✅ Diagrama válido! Nenhum erro ou aviso encontrado.', 'ok', 4000);
+    setStatus('Diagrama válido ✅', 'var(--ok)');
+  } else if (nodes.length === 0) {
+    toast('Adicione serviços ao canvas primeiro.', 'info', 3000);
+  } else {
+    toast(`Validação: ${errCount} erro(s), ${warnCount} aviso(s). Clique em cada nó para detalhes.`, errCount > 0 ? 'err' : 'warn', 5000);
+    setStatus(`${errCount} erro(s), ${warnCount} aviso(s) — clique nos nós`, errCount > 0 ? 'var(--err)' : 'var(--warn)');
+  }
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+//  SIDEBAR
+// ──────────────────────────────────────────────────────────────────────────────
+function renderSidebar(filter = '') {
+  const list = document.getElementById('service-list');
+  const cats = {};
+  const f = filter.toLowerCase();
+  SERVICES.forEach(s => {
+    if (!f || s.name.toLowerCase().includes(f) || s.short.toLowerCase().includes(f) || s.cat.toLowerCase().includes(f)) {
+      if (!cats[s.cat]) cats[s.cat] = [];
+      cats[s.cat].push(s);
+    }
+  });
+  list.innerHTML = '';
+  Object.entries(cats).forEach(([cat, svcs]) => {
+    const ch = document.createElement('div');
+    ch.className = 'svc-cat';
+    ch.textContent = cat;
+    list.appendChild(ch);
+    svcs.forEach(s => {
+      const el = document.createElement('div');
+      el.className = 'svc-item';
+      el.draggable = true;
+      el.title = s.desc;
+      el.innerHTML = `
+        <div class="svc-icon" style="background:${s.bg};color:${s.color}">${s.icon}</div>
+        <div><div class="svc-name">${s.name}</div><div class="svc-short">${s.short}</div></div>`;
+      el.addEventListener('dragstart', e => e.dataTransfer.setData('serviceId', s.id));
+      el.addEventListener('dblclick', () => tryAddNode(s.id));
+      list.appendChild(el);
+    });
+  });
+}
+function filterServices(v) { renderSidebar(v); }
+
+// ──────────────────────────────────────────────────────────────────────────────
+//  ADICIONAR NÓ
+// ──────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Verifica pré-requisitos ANTES de adicionar o nó.
+ * Se houver regras de pré-requisito do tipo 'err', exibe modal de confirmação.
+ */
+function tryAddNode(serviceId, x, y) {
+  const present = presentServiceIds();
+  const svc = SERVICES.find(s => s.id === serviceId);
+
+  // Verifica regras de pré-requisito 'err' (bloqueantes)
+  const blockers = RULES.filter(r =>
+    r.type === 'prereq' && r.service === serviceId && r.severity === 'err'
+  ).filter(r => {
+    const mode = r.requiresMode || 'all';
+    if (mode === 'all') return r.requires.some(req => !present.has(req));
+    return !r.requires.some(req => present.has(req));
+  });
+
+  if (blockers.length > 0) {
+    const b = blockers[0];
+    showModal(
+      `⚠️ Pré-requisito: ${b.title}`,
+      b.msg,
+      () => addNode(serviceId, x, y)
+    );
+    return;
+  }
+
+  // Verifica pré-requisitos 'warn' (não bloqueantes, mas avisa)
+  const warnings = RULES.filter(r =>
+    r.type === 'prereq' && r.service === serviceId && r.severity === 'warn'
+  ).filter(r => {
+    const mode = r.requiresMode || 'all';
+    if (mode === 'all') return r.requires.some(req => !present.has(req));
+    return !r.requires.some(req => present.has(req));
+  });
+
+  if (warnings.length > 0) {
+    toast(`⚠️ ${warnings[0].title}: ${warnings[0].msg.substring(0, 90)}…`, 'warn', 5000);
+  }
+
+  addNode(serviceId, x, y);
+}
+
+function addNode(serviceId, x, y) {
+  const canvas = document.getElementById('canvas');
+  const id = 'node_' + (++nodeIdCtr);
+  const nx = x ?? (canvas.offsetWidth / 2 - 65 + (Math.random()-.5)*100);
+  const ny = y ?? (canvas.offsetHeight / 2 - 35 + (Math.random()-.5)*100);
+  const node = { id, serviceId, x: Math.max(0, nx), y: Math.max(0, ny) };
+  nodes.push(node);
+  renderNode(node);
+  applyValidationStyles();
+  hideTutorialOnce();
+}
+
+function addNodeAtCenter(serviceId) { tryAddNode(serviceId); }
+
+function renderNode(node) {
+  const s = SERVICES.find(s => s.id === node.serviceId);
+  const el = document.createElement('div');
+  el.className = 'canvas-node';
+  el.id = node.id;
+  el.style.cssText = `left:${node.x}px;top:${node.y}px;background:${s.bg};border-color:${s.color}44`;
+  el.innerHTML = `
+    <div class="node-header" style="background:${s.color}1A">
+      <div class="node-icon" style="background:${s.bg};color:${s.color}">${s.icon}</div>
+      <div class="node-title" style="color:${s.color}">${s.name}</div>
+    </div>
+    <div class="node-body">${s.short}</div>
+    <div class="connect-port port-r" title="Clique para conectar" onclick="startConnect('${node.id}',event)"></div>
+    <div class="connect-port port-b" title="Clique para conectar" onclick="startConnect('${node.id}',event)"></div>
+    <div class="node-delete" onclick="deleteNode('${node.id}',event)" title="Remover">✕</div>`;
+  el.addEventListener('mousedown', e => startDrag(e, node.id));
+  el.addEventListener('click', e => { e.stopPropagation(); selectNode(node.id); });
+  document.getElementById('canvas').appendChild(el);
+}
+
+function onDrop(e) {
+  e.preventDefault();
+  const id = e.dataTransfer.getData('serviceId');
+  if (!id) return;
+  const rect = document.getElementById('canvas').getBoundingClientRect();
+  tryAddNode(id, e.clientX - rect.left - 65, e.clientY - rect.top - 33);
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+//  DRAG NÓS
+// ──────────────────────────────────────────────────────────────────────────────
+let dragState = null;
+function startDrag(e, nodeId) {
+  if (e.target.classList.contains('connect-port') || e.target.classList.contains('node-delete') || e.target.classList.contains('node-badge')) return;
+  e.preventDefault();
+  const node = nodes.find(n => n.id === nodeId);
+  dragState = { nodeId, ox: e.clientX - node.x, oy: e.clientY - node.y };
+  document.addEventListener('mousemove', onDragMove);
+  document.addEventListener('mouseup', onDragEnd);
+}
+function onDragMove(e) {
+  if (!dragState) return;
+  const node = nodes.find(n => n.id === dragState.nodeId);
+  node.x = Math.max(0, e.clientX - dragState.ox);
+  node.y = Math.max(0, e.clientY - dragState.oy);
+  const el = document.getElementById(dragState.nodeId);
+  if (el) { el.style.left = node.x + 'px'; el.style.top = node.y + 'px'; }
+  renderConnections();
+}
+function onDragEnd() {
+  dragState = null;
+  document.removeEventListener('mousemove', onDragMove);
+  document.removeEventListener('mouseup', onDragEnd);
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+//  SELECIONAR E CONECTAR
+// ──────────────────────────────────────────────────────────────────────────────
+function selectNode(nodeId) {
+  if (connectingFrom && connectingFrom !== nodeId) {
+    finishConnect(nodeId);
+    return;
+  }
+  document.querySelectorAll('.canvas-node').forEach(el => el.classList.remove('selected'));
+  selectedNode = nodeId;
+  document.getElementById(nodeId)?.classList.add('selected');
+  showInfo(nodeId);
+}
+
+document.getElementById('canvas').addEventListener('click', e => {
+  if (e.target.id === 'canvas' || e.target.id === 'canvas-svg') {
+    document.querySelectorAll('.canvas-node').forEach(el => el.classList.remove('selected'));
+    selectedNode = null;
+    connectingFrom = null;
+    document.getElementById('canvas').classList.remove('connecting');
+    showEmptyInfo();
+    setStatus('Pronto', 'var(--ok)');
+  }
+});
+
+function startConnect(nodeId, e) {
+  e.stopPropagation();
+  connectingFrom = nodeId;
+  document.getElementById('canvas').classList.add('connecting');
+  const s = SERVICES.find(sv => sv.id === nodes.find(n => n.id === nodeId)?.serviceId);
+  setStatus(`Modo conexão ativo: clique no destino para conectar ${s?.name || ''} (ESC para cancelar)`, 'var(--aws-orange)');
+}
+
+function finishConnect(targetId) {
+  if (!connectingFrom || connectingFrom === targetId) {
+    connectingFrom = null;
+    document.getElementById('canvas').classList.remove('connecting');
+    return;
+  }
+  const fromNode = nodes.find(n => n.id === connectingFrom);
+  const toNode   = nodes.find(n => n.id === targetId);
+  if (!fromNode || !toNode) { connectingFrom = null; return; }
+
+  const fromSvc = fromNode.serviceId;
+  const toSvc   = toNode.serviceId;
+
+  // Conexão duplicada?
+  const exists = connections.find(c =>
+    (c.from === connectingFrom && c.to === targetId) ||
+    (c.from === targetId && c.to === connectingFrom)
+  );
+  if (exists) {
+    toast('Essa conexão já existe.', 'info', 2500);
+    connectingFrom = null;
+    document.getElementById('canvas').classList.remove('connecting');
+    return;
+  }
+
+  // Validação antes de criar
+  const check = validateConnection(fromSvc, toSvc);
+  if (check && check.severity === 'err' && !check.ok) {
+    // Conexão bloqueada
+    showModal(
+      `🚫 ${check.title}`,
+      check.msg + '\n\nEssa conexão é arquiteturalmente inválida e será bloqueada.',
+      null // sem callback de confirmação — conexão bloqueada
+    );
+    connectingFrom = null;
+    document.getElementById('canvas').classList.remove('connecting');
+    return;
+  }
+
+  // Cria a conexão
+  const connId = 'conn_' + (++connIdCtr);
+  connections.push({ id: connId, from: connectingFrom, to: targetId });
+  renderConnections();
+  applyValidationStyles();
+
+  if (check && check.severity === 'err') {
+    toast(`⛔ ${check.title}: ${check.msg.substring(0,80)}…`, 'err', 6000);
+    setStatus(`Erro: ${check.title}`, 'var(--err)');
+  } else if (check && check.severity === 'warn') {
+    toast(`⚠️ ${check.title}: ${check.msg.substring(0,80)}…`, 'warn', 5000);
+    setStatus(`Aviso: ${check.title}`, 'var(--warn)');
+  } else {
+    // Verifica se é boa combinação
+    const fromSvcObj = SERVICES.find(s => s.id === fromSvc);
+    const toSvcObj   = SERVICES.find(s => s.id === toSvc);
+    const goodCombo  = fromSvcObj?.relations.includes(toSvc) || toSvcObj?.relations.includes(fromSvc);
+    if (goodCombo) {
+      toast(`✅ ${fromSvcObj?.name} ↔ ${toSvcObj?.name} — boa combinação arquitetural!`, 'ok', 3000);
+      setStatus(`Conexão criada`, 'var(--ok)');
+    } else {
+      toast(`🔗 Conexão criada. Verifique se faz sentido arquiteturalmente.`, 'info', 3000);
+      setStatus(`Conexão criada`, 'var(--ok)');
+    }
+  }
+
+  connectingFrom = null;
+  document.getElementById('canvas').classList.remove('connecting');
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+//  RENDERIZAR CONEXÕES SVG
+// ──────────────────────────────────────────────────────────────────────────────
+function renderConnections() {
+  const svg = document.getElementById('canvas-svg');
+  const cr  = svg.getBoundingClientRect();
+  svg.innerHTML = `<defs>
+    <marker id="arr-ok"   viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M2 1L8 5L2 9" fill="none" stroke="#FF9900" stroke-width="1.8" stroke-linecap="round"/></marker>
+    <marker id="arr-err"  viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M2 1L8 5L2 9" fill="none" stroke="#ef4444" stroke-width="1.8" stroke-linecap="round"/></marker>
+    <marker id="arr-warn" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M2 1L8 5L2 9" fill="none" stroke="#f59e0b" stroke-width="1.8" stroke-linecap="round"/></marker>
+  </defs>`;
+
+  connections.forEach(conn => {
+    const fe = document.getElementById(conn.from);
+    const te = document.getElementById(conn.to);
+    if (!fe || !te) return;
+    const fr = fe.getBoundingClientRect();
+    const tr = te.getBoundingClientRect();
+    const x1 = fr.left + fr.width /2 - cr.left;
+    const y1 = fr.top  + fr.height/2 - cr.top;
+    const x2 = tr.left + tr.width /2 - cr.left;
+    const y2 = tr.top  + tr.height/2 - cr.top;
+    const cx = (x1+x2)/2;
+
+    // Determina cor da linha baseado em issues nos dois nós
+    const fn = nodes.find(n => n.id === conn.from);
+    const tn = nodes.find(n => n.id === conn.to);
+    const issues = validateDiagram();
+    const fromIssues = issues.get(conn.from) || [];
+    const toIssues   = issues.get(conn.to)   || [];
+    const hasErr  = [...fromIssues,...toIssues].some(i => i.severity==='err');
+    const hasWarn = [...fromIssues,...toIssues].some(i => i.severity==='warn');
+
+    // Também verifica a conexão específica
+    const fSvc = fn?.serviceId; const tSvc = tn?.serviceId;
+    const connCheck = fSvc && tSvc ? validateConnection(fSvc, tSvc) : null;
+    const lineColor = (hasErr || (connCheck?.severity==='err')) ? '#ef4444' :
+                      (hasWarn || (connCheck?.severity==='warn')) ? '#f59e0b' : '#FF9900';
+    const markerId = lineColor === '#ef4444' ? 'arr-err' : lineColor === '#f59e0b' ? 'arr-warn' : 'arr-ok';
+
+    const path = document.createElementNS('http://www.w3.org/2000/svg','path');
+    path.setAttribute('d', `M${x1},${y1} Q${cx},${y1} ${cx},${(y1+y2)/2} Q${cx},${y2} ${x2},${y2}`);
+    path.setAttribute('fill','none');
+    path.setAttribute('stroke', lineColor);
+    path.setAttribute('stroke-width', hasErr ? '2.5' : '2');
+    path.setAttribute('stroke-dasharray', hasErr ? '0' : '7 3');
+    path.setAttribute('opacity','0.85');
+    path.setAttribute('marker-end', `url(#${markerId})`);
+    path.style.cursor = 'pointer';
+    path.title = 'Clique para remover';
+    path.addEventListener('click', () => {
+      if (confirm('Remover esta conexão?')) {
+        connections = connections.filter(c => c.id !== conn.id);
+        renderConnections();
+        applyValidationStyles();
+      }
+    });
+    svg.appendChild(path);
+  });
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+//  PAINEL DE INFORMAÇÕES / DIAGNÓSTICO
+// ──────────────────────────────────────────────────────────────────────────────
+function showInfo(nodeId) {
+  const node = nodes.find(n => n.id === nodeId);
+  if (!node) return;
+  const s = SERVICES.find(s => s.id === node.serviceId);
+  const issues = validateDiagram();
+  const nodeIssues = issues.get(nodeId) || [];
+  const errs  = nodeIssues.filter(i => i.severity === 'err');
+  const warns = nodeIssues.filter(i => i.severity === 'warn');
+
+  let html = `
+  <div class="info-sec">
+    <div style="display:flex;align-items:center;gap:9px;margin-bottom:9px">
+      <div class="svc-icon" style="background:${s.bg};color:${s.color};width:34px;height:34px;font-size:17px;border-radius:8px;flex-shrink:0">${s.icon}</div>
+      <div>
+        <div style="font-weight:700;font-size:13px;color:var(--txt)">${s.name}</div>
+        <div style="font-size:10px;color:var(--txt2)">${s.cat}</div>
+      </div>
+    </div>
+    <div class="info-lbl">O que é</div>
+    <div class="info-val">${s.desc}</div>
+  </div>`;
+
+  // Diagnóstico
+  if (errs.length > 0 || warns.length > 0) {
+    html += `<div class="info-sec"><div class="info-lbl">🔍 Diagnóstico</div></div>`;
+    errs.forEach(i => {
+      html += `<div class="val-item"><div class="val-icon val-badge-err">⛔</div>
+        <div class="val-text"><strong class="val-badge-err">Erro — ${i.title}</strong>${i.msg}</div></div>`;
+    });
+    warns.forEach(i => {
+      html += `<div class="val-item"><div class="val-icon val-badge-warn">⚠️</div>
+        <div class="val-text"><strong class="val-badge-warn">Aviso — ${i.title}</strong>${i.msg}</div></div>`;
+    });
+  } else if (isConnected(nodeId)) {
+    html += `<div class="info-sec"><div class="val-item">
+      <div class="val-icon val-badge-ok">✅</div>
+      <div class="val-text"><strong class="val-badge-ok">Sem problemas</strong>Serviço válido e bem conectado na arquitetura.</div>
+    </div></div>`;
+  }
+
+  // Boas práticas
+  html += `<div class="info-sec"><div class="info-lbl">💡 Boas práticas</div>
+    ${s.tips.map(t => `<div class="info-tip" style="border-color:${s.color}">${t}</div>`).join('')}
+  </div>`;
+
+  // Combina bem com
+  html += `<div class="info-sec"><div class="info-lbl">🔗 Combina bem com</div><div>
+    ${s.relations.map(r => {
+      const rs = SERVICES.find(x => x.id === r);
+      return rs ? `<span class="info-tag" style="background:${rs.bg};color:${rs.color}"
+        onclick="addNodeAtCenter('${rs.id}')" title="Adicionar ${rs.name} ao canvas">${rs.icon} ${rs.name}</span>` : '';
+    }).join('')}
+  </div></div>`;
+
+  // Pré-requisitos desta peça
+  const prereqs = RULES.filter(r => r.type === 'prereq' && r.service === s.id);
+  if (prereqs.length > 0) {
+    html += `<div class="info-sec"><div class="info-lbl">📋 Pré-requisitos</div>`;
+    prereqs.forEach(p => {
+      const names = p.requires.map(r => SERVICES.find(x => x.id === r)?.name || r);
+      const mode  = p.requiresMode === 'any' ? 'Pelo menos um de' : 'Todos';
+      html += `<div style="font-size:11px;color:var(--txt);margin-bottom:5px;padding:3px 6px;
+        border-radius:4px;background:${p.severity==='err'?'rgba(239,68,68,.08)':'rgba(245,158,11,.08)'}">
+        ${p.severity==='err'?'🔴':'🟡'} <strong>${mode}:</strong> ${names.join(', ')}
+      </div>`;
+    });
+    html += `</div>`;
+  }
+
+  // Doc link
+  html += `<div class="info-sec">
+    <div class="info-lbl">📖 Documentação oficial</div>
+    <a class="info-link" href="${s.docUrl}" target="_blank" rel="noopener">docs.aws.amazon.com ↗</a>
+  </div>`;
+
+  document.getElementById('info-content').innerHTML = html;
+}
+
+function showEmptyInfo() {
+  document.getElementById('info-content').innerHTML =
+    '<div class="empty-state">🖱️ Clique em um serviço para ver detalhes, diagnóstico e documentação.<br><br>💡 Dica: as tags coloridas em "Combina bem com" são clicáveis — adicionam o serviço ao canvas!</div>';
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+//  REGIÕES AWS (drag-resize)
+// ──────────────────────────────────────────────────────────────────────────────
+function addRegion() {
+  const idx = regionIdCtr % REGION_COLORS.length;
+  const id  = 'region_' + (++regionIdCtr);
+  const region = { id,
+    label: REGION_LABELS[idx], color: REGION_COLORS[idx],
+    x: 20 + (regionIdCtr-1)*25, y: 20 + (regionIdCtr-1)*18, w: 320, h: 220 };
+  regions.push(region);
+  renderRegion(region);
+}
+
+function renderRegion(region) {
+  const canvas = document.getElementById('canvas');
+  const el = document.createElement('div');
+  el.className = 'region-box';
+  el.id = region.id;
+  el.style.cssText = `left:${region.x}px;top:${region.y}px;width:${region.w}px;height:${region.h}px;` +
+    `border-color:${region.color}55;background:${region.color}06`;
+  el.innerHTML = `
+    <span class="region-label" style="color:${region.color}BB">🌎 ${region.label}</span>
+    <span class="region-resize" title="Arraste para redimensionar">↘</span>`;
+
+  // Drag da região
+  el.addEventListener('mousedown', e => {
+    if (e.target.classList.contains('region-resize')) return;
+    const startX = e.clientX - region.x, startY = e.clientY - region.y;
+    const move = ev => { region.x = ev.clientX-startX; region.y = ev.clientY-startY;
+      el.style.left = region.x+'px'; el.style.top = region.y+'px'; };
+    const up = () => { document.removeEventListener('mousemove',move); document.removeEventListener('mouseup',up); };
+    document.addEventListener('mousemove', move);
+    document.addEventListener('mouseup', up);
+  });
+
+  // Resize da região
+  el.querySelector('.region-resize').addEventListener('mousedown', e => {
+    e.stopPropagation();
+    const startX = e.clientX - region.w, startY = e.clientY - region.h;
+    const move = ev => { region.w = Math.max(160, ev.clientX-startX); region.h = Math.max(100, ev.clientY-startY);
+      el.style.width = region.w+'px'; el.style.height = region.h+'px'; };
+    const up = () => { document.removeEventListener('mousemove',move); document.removeEventListener('mouseup',up); };
+    document.addEventListener('mousemove', move);
+    document.addEventListener('mouseup', up);
+  });
+
+  canvas.insertBefore(el, canvas.firstChild);
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+//  DELETAR / LIMPAR
+// ──────────────────────────────────────────────────────────────────────────────
+function deleteNode(nodeId, e) {
+  e.stopPropagation();
+  nodes = nodes.filter(n => n.id !== nodeId);
+  connections = connections.filter(c => c.from !== nodeId && c.to !== nodeId);
+  document.getElementById(nodeId)?.remove();
+  renderConnections();
+  applyValidationStyles();
+  showEmptyInfo();
+  selectedNode = null;
+}
+
+function clearAll() {
+  if (nodes.length === 0 && regions.length === 0) return;
+  if (!confirm('Limpar todo o canvas?')) return;
+  nodes = []; connections = []; regions = [];
+  document.querySelectorAll('.canvas-node,.region-box').forEach(el => el.remove());
+  document.getElementById('canvas-svg').innerHTML = '';
+  applyValidationStyles();
+  showEmptyInfo();
+  setStatus('Canvas limpo', 'var(--ok)');
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+//  EXPORTAR SVG
+// ──────────────────────────────────────────────────────────────────────────────
+function exportSVG() {
+  if (nodes.length === 0) { toast('Adicione serviços ao canvas primeiro.','info',2500); return; }
+  const canvas = document.getElementById('canvas');
+  const w = canvas.offsetWidth, h = canvas.offsetHeight;
+  let svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}">
+  <rect width="${w}" height="${h}" fill="#ffffff"/>`;
+  regions.forEach(r => {
+    svg += `<rect x="${r.x}" y="${r.y}" width="${r.w}" height="${r.h}" rx="12" fill="${r.color}0A" stroke="${r.color}55" stroke-width="1.5" stroke-dasharray="6 3"/>
+    <text x="${r.x+11}" y="${r.y+19}" font-size="10" font-family="sans-serif" fill="${r.color}BB" font-weight="700">${r.label}</text>`;
+  });
+  connections.forEach(conn => {
+    const fn = nodes.find(n => n.id === conn.from), tn = nodes.find(n => n.id === conn.to);
+    if (!fn||!tn) return;
+    const x1=fn.x+65, y1=fn.y+40, x2=tn.x+65, y2=tn.y+40, cx=(x1+x2)/2;
+    svg += `<path d="M${x1},${y1} Q${cx},${y1} ${cx},${(y1+y2)/2} Q${cx},${y2} ${x2},${y2}" fill="none" stroke="#FF9900" stroke-width="2" stroke-dasharray="7 3" opacity="0.8"/>`;
+  });
+  nodes.forEach(node => {
+    const s = SERVICES.find(s => s.id === node.serviceId);
+    if (!s) return;
+    svg += `<rect x="${node.x}" y="${node.y}" width="138" height="66" rx="9" fill="${s.bg}" stroke="${s.color}44" stroke-width="1.5"/>
+    <rect x="${node.x}" y="${node.y}" width="138" height="36" rx="9" fill="${s.color}1A"/>
+    <rect x="${node.x}" y="${node.y+27}" width="138" height="9" fill="${s.color}1A"/>
+    <text x="${node.x+9}" y="${node.y+24}" font-size="14">${s.icon}</text>
+    <text x="${node.x+30}" y="${node.y+24}" font-size="12" font-family="sans-serif" fill="${s.color}" font-weight="700">${s.name}</text>
+    <text x="${node.x+8}" y="${node.y+52}" font-size="10" font-family="sans-serif" fill="#666">${s.short.substring(0,24)}</text>`;
+  });
+  svg += `<text x="${w-10}" y="${h-10}" font-size="9" font-family="sans-serif" fill="#aaa" text-anchor="end">AWS Infrastructure Builder v2 — Athos de Araujo Gomes de França</text>
+  </svg>`;
+
+  const blob = new Blob([svg], { type:'image/svg+xml' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'aws-architecture.svg';
+  a.click();
+  toast('✅ SVG exportado!', 'ok', 3000);
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+//  TOAST
+// ──────────────────────────────────────────────────────────────────────────────
+function toast(msg, type = 'info', duration = 4000) {
+  const wrap = document.getElementById('toast-wrap');
+  const el = document.createElement('div');
+  el.className = `toast ${type}`;
+  el.innerHTML = `<span style="flex:1">${msg}</span><span class="toast-close" onclick="this.parentElement.remove()">×</span>`;
+  wrap.appendChild(el);
+  setTimeout(() => {
+    el.classList.add('fade');
+    setTimeout(() => el.remove(), 400);
+  }, duration);
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+//  MODAL
+// ──────────────────────────────────────────────────────────────────────────────
+function showModal(title, body, confirmCb) {
+  document.getElementById('modal-title').textContent = title;
+  document.getElementById('modal-body').textContent = body;
+  const btn = document.getElementById('modal-confirm');
+  if (confirmCb) {
+    btn.style.display = 'block';
+    btn.onclick = () => { closeModal(); confirmCb(); };
+  } else {
+    btn.style.display = 'none';
+  }
+  document.getElementById('modal-overlay').classList.add('open');
+}
+function closeModal() {
+  document.getElementById('modal-overlay').classList.remove('open');
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+//  UTILITÁRIOS
+// ──────────────────────────────────────────────────────────────────────────────
+function setStatus(msg, color) {
+  document.getElementById('status-text').textContent = msg;
+  if (color) document.getElementById('status-dot').style.background = color;
+}
+
+let tutorialGone = false;
+function hideTutorialOnce() {
+  if (tutorialGone) return;
+  tutorialGone = true;
+  // Tutorial está no toast de boas-vindas — já some sozinho
+}
+
+function explainDiagram() {
+  if (nodes.length === 0) { toast('Adicione serviços ao canvas primeiro.','info',3000); return; }
+  const svcNames = [...new Set(nodes.map(n => SERVICES.find(s=>s.id===n.serviceId)?.name).filter(Boolean))];
+  const connList = connections.map(c => {
+    const fs = SERVICES.find(s=>s.id===nodes.find(n=>n.id===c.from)?.serviceId);
+    const ts = SERVICES.find(s=>s.id===nodes.find(n=>n.id===c.to)?.serviceId);
+    return fs&&ts ? `${fs.name} → ${ts.name}` : '';
+  }).filter(Boolean);
+  const issues = validateDiagram();
+  let issueText = '';
+  issues.forEach((list, nodeId) => {
+    const n = nodes.find(x=>x.id===nodeId);
+    const s = SERVICES.find(x=>x.id===n?.serviceId);
+    list.forEach(i => { issueText += `${s?.name}: ${i.severity.toUpperCase()} — ${i.title}. `; });
+  });
+  const msg = encodeURIComponent(
+    `Diagrama AWS: ${svcNames.join(', ')}.` +
+    (connList.length ? ` Conexões: ${connList.join(', ')}.` : '') +
+    (issueText ? ` Problemas detectados: ${issueText}` : '') +
+    ` Explique a arquitetura, avalie os problemas e sugira melhorias.`
+  );
+  window.open(`https://claude.ai/new?q=${msg}`, '_blank');
+}
+
+// Teclado
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') {
+    connectingFrom = null;
+    document.getElementById('canvas').classList.remove('connecting');
+    closeModal();
+    setStatus('Cancelado', 'var(--txt2)');
+  }
+  if ((e.key === 'Delete' || e.key === 'Backspace') && selectedNode && e.target.tagName !== 'INPUT') {
+    deleteNode(selectedNode, { stopPropagation: ()=>{} });
+    selectedNode = null;
+  }
+});
+
+// ──────────────────────────────────────────────────────────────────────────────
+//  INICIALIZAÇÃO
+// ──────────────────────────────────────────────────────────────────────────────
+renderSidebar();
+applyValidationStyles();
+
+// Toast de boas-vindas
+setTimeout(() => {
+  toast('💡 Arraste serviços ao canvas. O motor de validação detecta erros e pré-requisitos automaticamente.', 'info', 7000);
+}, 600);
+
+const LAB_TEMPLATES = {
+  vpc:["Criar VPC","Criar Subnets","Configurar Route Tables"],
+  ec2:["Criar Security Group","Criar Key Pair","Provisionar EC2"],
+  rds:["Criar DB Subnet Group","Provisionar RDS","Testar conexão"],
+  s3:["Criar Bucket","Habilitar Versionamento"]
+};
+
+function getServices(){
+  return [...new Set((nodes||[]).map(n=>n.serviceId||n.id).filter(Boolean))];
+}
+
+function showGenerated(title,content){
+  const w = window.open('', '_blank');
+  w.document.write('<pre style="white-space:pre-wrap;font-family:monospace">' +
+                   title + '\\n\\n' +
+                   String(content).replace(/</g,'&lt;') +
+                   '</pre>');
+}
+
+function generateLab(){
+  let out=['AWS LAB GUIDE',''];
+  getServices().forEach(s=>{
+    if(LAB_TEMPLATES[s]){
+      out.push('## '+s.toUpperCase());
+      LAB_TEMPLATES[s].forEach((x,i)=>out.push((i+1)+'. '+x));
+      out.push('');
+    }
+  });
+  showGenerated('Lab Generator', out.join('\\n'));
+}
+
+function generateTerraform(){
+  let out=[];
+  if(getServices().includes('vpc'))
+    out.push('resource "aws_vpc" "main" {\\n  cidr_block = "10.0.0.0/16"\\n}');
+  if(getServices().includes('ec2'))
+    out.push('resource "aws_instance" "web" {\\n  ami = "ami-xxxxxxxx"\\n  instance_type = "t3.micro"\\n}');
+  showGenerated('Terraform', out.join('\\n\\n'));
+}
+
+function generateCLI(){
+  let out=[];
+  if(getServices().includes('vpc'))
+    out.push('aws ec2 create-vpc --cidr-block 10.0.0.0/16');
+  if(getServices().includes('ec2'))
+    out.push('aws ec2 run-instances --image-id ami-xxxxxxxx --instance-type t3.micro');
+  showGenerated('AWS CLI', out.join('\\n'));
+}
+
+</script>
+</body>
+</html>
